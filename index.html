@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Sistema de Etiquetas PRO INTEGRAL – MÓVIL FINAL</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+
+<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://unpkg.com/html5-qrcode"></script>
+
+<style>
+:root{--w:80mm;--h:50mm;--paper-bg:#fff}
+*{box-sizing:border-box;font-family:Arial}
+body{margin:0;background:#f1f5f9}
+.wrap{max-width:480px;margin:auto;padding:12px}
+
+/* TARJETAS */
+.card{background:#fff;border-radius:18px;padding:14px;margin-bottom:14px;box-shadow:0 10px 25px rgba(0,0,0,.08)}
+.card-header{display:flex;justify-content:space-between;align-items:center}
+.card-header h3{margin:0;font-size:16px}
+.toggle{border:none;background:#e5e7eb;border-radius:10px;width:34px;height:34px;font-size:20px;font-weight:900}
+.card-body{margin-top:10px}
+.hidden{display:none}
+
+/* INPUTS */
+input,select,button{width:100%;padding:12px;margin-top:8px;border-radius:14px;border:1px solid #e2e8f0;font-size:15px}
+
+/* BOTONES */
+.btn{border:none;border-radius:18px;padding:16px;font-weight:700;font-size:16px}
+.primary{background:#0ea5e9;color:#fff}
+.secondary{background:#64748b;color:#fff}
+.danger{background:#ef4444;color:#fff}
+
+/* PROGRESO */
+.progress{height:10px;background:#e5e7eb;border-radius:8px;overflow:hidden;margin-top:10px}
+.progress span{display:block;height:100%;width:0%;background:linear-gradient(90deg,#14b8a6,#22d3ee);transition:width .3s}
+
+/* SEMÁFORO */
+.semaforo{display:flex;justify-content:center;gap:10px;margin-top:10px}
+.luz{width:14px;height:14px;border-radius:50%;background:#cbd5e1}
+.luz.rojo.on{background:#ef4444}
+.luz.amarillo.on{background:#facc15}
+.luz.verde.on{background:#22c55e}
+
+/* SCANNER */
+#scanner{display:none;position:relative;height:260px;background:#000;border-radius:18px;overflow:hidden;margin-top:10px}
+.scan-line{position:absolute;top:0;left:0;width:100%;height:2px;background:red;animation:scan 2s linear infinite;box-shadow:0 0 10px red}
+@keyframes scan{0%{top:0}50%{top:95%}100%{top:0}}
+.switch{display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-weight:700}
+.switch input{transform:scale(1.4)}
+
+/* BUSCADOR */
+.results{margin-top:6px;border-radius:14px;overflow:hidden;background:#f8fafc}
+.result{padding:10px;border-bottom:1px solid #e5e7eb}
+
+/* LISTA */
+.item{background:#f8fafc;padding:10px 14px;border-radius:14px;display:flex;justify-content:space-between;align-items:center;margin-top:6px}
+
+/* ETIQUETAS */
+.sheet{display:flex;flex-wrap:wrap;gap:4mm;padding:4mm;background:var(--paper-bg)}
+.label{width:var(--w);height:var(--h);background:#fff;padding:4mm;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center}
+.codigo{font-size:20px;font-weight:900;margin-bottom:2mm}
+.code{display:flex;justify-content:center;align-items:center;width:100%;margin:2mm 0}
+.code canvas,.code svg{margin:0 auto}
+.descripcion{font-size:13px;font-weight:700;margin-top:2mm}
+.unidades{font-size:14px;font-weight:900;margin-top:1mm}
+
+/* PRINT */
+@page{margin:0}
+@media print{
+ body *{display:none!important}
+ .sheet,.sheet *{display:block!important}
+ .sheet{position:absolute;inset:0}
+ .label{width:var(--w)!important;height:var(--h)!important}
+}
+</style>
+</head>
+
+<body>
+
+<audio id="beep">
+ <source src="https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg">
+</audio>
+
+<div class="wrap">
+
+<!-- IMPORTAR / BUSCAR -->
+<div class="card">
+ <div class="card-header">
+  <h3>📂 Importar / Buscar</h3>
+  <button class="toggle" onclick="toggleCard(this)">−</button>
+ </div>
+ <div class="card-body">
+  <input type="file" id="file" accept=".xlsx">
+  <button class="btn secondary" onclick="importarXLSX()">Importar XLSX</button>
+  <input id="search" placeholder="Buscar código o descripción" oninput="buscar()">
+  <div id="results" class="results"></div>
+  <div class="progress"><span id="bar"></span></div>
+  <div class="semaforo">
+   <div class="luz rojo" id="lr"></div>
+   <div class="luz amarillo" id="la"></div>
+   <div class="luz verde" id="lv"></div>
+  </div>
+ </div>
+</div>
+
+<!-- SCANNER -->
+<div class="card">
+ <div class="card-header">
+  <h3>📷 Escáner</h3>
+  <button class="toggle" onclick="toggleCard(this)">−</button>
+ </div>
+ <div class="card-body">
+  <button class="btn primary" onclick="abrirScanner()">Iniciar escaneo</button>
+  <div class="switch">
+   <span>🔦 Linterna</span>
+   <input type="checkbox" onchange="toggleTorch(this.checked)">
+  </div>
+  <div id="scanner"><div class="scan-line"></div></div>
+ </div>
+</div>
+
+<!-- CONFIG -->
+<div class="card">
+ <div class="card-header">
+  <h3>⚙️ Configuración</h3>
+  <button class="toggle" onclick="toggleCard(this)">−</button>
+ </div>
+ <div class="card-body">
+  <select onchange="setTemplate(this.value)">
+   <option value="">Tamaño personalizado</option>
+   <option value="50x30">50 x 30 mm</option>
+   <option value="80x50">80 x 50 mm</option>
+   <option value="100x70">100 x 70 mm</option>
+  </select>
+  <input id="w" type="number" value="80">
+  <input id="h" type="number" value="50">
+  <select id="tipo">
+   <option value="QR">QR</option>
+   <option value="CODE128">CODE128</option>
+   <option value="CODE39">CODE39</option>
+  </select>
+ </div>
+</div>
+
+<!-- DATOS -->
+<div class="card">
+ <div class="card-header">
+  <h3>🏷️ Datos etiqueta</h3>
+  <button class="toggle" onclick="toggleCard(this)">−</button>
+ </div>
+ <div class="card-body">
+  <input id="codigo" placeholder="Código">
+  <input id="descripcion" placeholder="Descripción">
+  <input id="unidades" value="1">
+  <input id="cant" value="1">
+  <button class="btn secondary" onclick="preAgregar()">Agregar</button>
+  <div id="lista"></div>
+  <button class="btn danger" onclick="imprimir()">Imprimir</button>
+ </div>
+</div>
+
+</div>
+
+<div class="sheet" id="preview"></div>
+
+<script>
+const API="https://script.google.com/macros/s/AKfycbwOx6mRhIPWQLXXeH5s_Fsw3A6A_dZv-ATUxQpybSR5jsoaH34i8c62eIhipmNy--ug/exec";
+let productos=[],buffer=[],scanner=null;
+
+/* COLAPSAR */
+function toggleCard(btn){
+ const body=btn.closest(".card").querySelector(".card-body");
+ body.classList.toggle("hidden");
+ btn.textContent=body.classList.contains("hidden")?"+":"−";
+}
+
+/* SEMÁFORO */
+function sem(c){
+ ["lr","la","lv"].forEach(i=>document.getElementById(i).classList.remove("on"));
+ if(c==="rojo") lr.classList.add("on");
+ if(c==="amarillo") la.classList.add("on");
+ if(c==="verde") lv.classList.add("on");
+}
+
+/* CARGAR BD */
+function cargarBD(){
+ fetch(API).then(r=>r.json()).then(d=>{
+  productos=d;
+  localStorage.setItem("productos",JSON.stringify(d));
+  sem("verde");
+ }).catch(()=>{
+  const ls=localStorage.getItem("productos");
+  if(ls) productos=JSON.parse(ls);
+ });
+}
+cargarBD();
+
+/* IMPORTAR */
+function importarXLSX(){
+ const f=file.files[0];
+ if(!f){alert("Seleccione XLSX");return}
+ sem("amarillo");bar.style.width="20%";
+ const r=new FileReader();
+ r.onload=e=>{
+  const wb=XLSX.read(e.target.result,{type:"binary"});
+  const ws=wb.Sheets[wb.SheetNames[0]];
+  const data=XLSX.utils.sheet_to_json(ws);
+  bar.style.width="50%";
+  const fd=new FormData();
+  fd.append("action","import");
+  fd.append("productos",JSON.stringify(data));
+  fetch(API,{method:"POST",body:fd}).then(()=>{
+   bar.style.width="100%";sem("verde");
+   setTimeout(()=>bar.style.width="0%",800);
+   cargarBD();
+  }).catch(()=>sem("rojo"));
+ };
+ r.readAsBinaryString(f);
+}
+
+/* BUSCAR */
+function buscar(){
+ const q=search.value.toLowerCase();
+ if(!q){results.innerHTML="";return}
+ results.innerHTML=productos.filter(p=>
+  p.CODIGO?.toLowerCase().includes(q)||
+  p.DESCRIPCION?.toLowerCase().includes(q)
+ ).slice(0,6).map(p=>`
+  <div class="result" onclick="seleccionar('${p.CODIGO}','${p.DESCRIPCION}','${p.UNIDADES||1}')">
+   <b>${p.CODIGO}</b> – ${p.DESCRIPCION}
+  </div>`).join("");
+}
+function seleccionar(c,d,u){
+ codigo.value=c;descripcion.value=d;unidades.value=u;results.innerHTML="";
+}
+
+/* SCANNER */
+function abrirScanner(){
+ scanner=new Html5Qrcode("scanner");
+ scanner.start({facingMode:"environment"},{fps:10,qrbox:250},txt=>{
+  beep.play();navigator.vibrate?.(200);
+  search.value=txt;buscar();
+ });
+}
+function toggleTorch(v){
+ scanner?.applyVideoConstraints({advanced:[{torch:v}]}).catch(()=>{});
+}
+
+/* CONFIG */
+function setTemplate(v){if(v){[w.value,h.value]=v.split("x")}}
+
+/* LISTA */
+function renderLista(){
+ lista.innerHTML="";
+ buffer.forEach((b,i)=>{
+  lista.innerHTML+=`
+   <div class="item">
+    <span>${b.codigo} (${b.cant})</span>
+    <button onclick="buffer.splice(${i},1);renderLista()">❌</button>
+   </div>`;
+ });
+}
+function preAgregar(){
+ buffer.push({
+  codigo:codigo.value,
+  descripcion:descripcion.value,
+  unidades:unidades.value,
+  cant:cant.value,
+  tipo:tipo.value,
+  w:w.value,h:h.value
+ });
+ renderLista();
+}
+
+/* IMPRIMIR */
+function imprimir(){
+ preview.innerHTML="";
+ buffer.forEach(b=>{
+  document.documentElement.style.setProperty("--w",b.w+"mm");
+  document.documentElement.style.setProperty("--h",b.h+"mm");
+  for(let i=0;i<b.cant;i++){
+   const l=document.createElement("div");
+   l.className="label";
+   l.innerHTML=`
+    <div class="codigo">${b.codigo}</div>
+    <div class="code"></div>
+    <div class="descripcion">${b.descripcion}</div>
+    <div class="unidades">UND: ${b.unidades}</div>`;
+   preview.appendChild(l);
+   const c=l.querySelector(".code");
+   b.tipo==="QR"
+    ?new QRCode(c,{text:b.codigo,width:80,height:80})
+    :JsBarcode(c.appendChild(document.createElementNS("http://www.w3.org/2000/svg","svg")),
+      b.codigo,{format:b.tipo,width:2,height:35,displayValue:false});
+  }
+ });
+ window.print();
+ buffer=[];renderLista();
+}
+</script>
+
+</body>
+</html>
